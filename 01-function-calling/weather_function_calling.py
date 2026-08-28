@@ -9,6 +9,9 @@ Cách chạy:
     python weather_function_calling.py
 """
 
+import os
+import json
+import httpx
 from google import genai
 from google.genai import types
 
@@ -41,33 +44,48 @@ get_weather_declaration = types.FunctionDeclaration(
 TOOLS = [types.Tool(function_declarations=[get_weather_declaration])]
 
 
-# 2. App tự thực thi tool (trong thực tế sẽ gọi API thời tiết thật)
-def get_weather(city: str) -> str:
-    """Trả về thời tiết (mock) của *city*. Dùng làm tool cho model."""
-    mock_data = {
-        "Hà Nội": {
-            "nhiệt_độ": "29°C",
-            "thời_tiết": "trời mưa nhẹ",
-            "độ_ẩm": "82%",
-            "gió": {"hướng": "Đông Nam", "tốc_độ": "12 km/h"},
-        },
-        "Hồ Chí Minh": {
-            "nhiệt_độ": "33°C",
-            "thời_tiết": "mưa rào",
-            "độ_ẩm": "75%",
-            "gió": {"hướng": "Tây Nam", "tốc_độ": "15 km/h"},
-        },
-        "Đà Nẵng": {
-            "nhiệt_độ": "30°C",
-            "thời_tiết": "nhiều mây",
-            "độ_ẩm": "78%",
-            "gió": {"hướng": "Đông", "tốc_độ": "10 km/h"},
-        },
-    }
-    import json
+# 2. App tự thực thi tool (gọi API thời tiết thật từ WeatherAPI.com)
+WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY", "68d4b33471cc461387875347262808")
 
-    default = {"nhiệt_độ": "28°C", "thời_tiết": "không có dữ liệu chi tiết"}
-    return json.dumps({"city": city, **mock_data.get(city, default)}, ensure_ascii=False)
+def get_weather(city: str) -> str:
+    """Lấy dữ liệu thời tiết thực tế của *city* từ WeatherAPI.com."""
+    url = "https://api.weatherapi.com/v1/current.json"
+    params = {
+        "key": WEATHERAPI_KEY,
+        "q": city,
+        "aqi": "no",
+        "lang": "vi"
+    }
+    try:
+        response = httpx.get(url, params=params, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+
+        current = data.get("current", {})
+        location = data.get("location", {})
+
+        result = {
+            "thành_phố": location.get("name", city),
+            "khu_vực": location.get("region"),
+            "quốc_gia": location.get("country"),
+            "nhiệt_độ": f"{current.get('temp_c')}°C",
+            "cảm_giác_như": f"{current.get('feelslike_c')}°C",
+            "thời_tiết": current.get("condition", {}).get("text"),
+            "độ_ẩm": f"{current.get('humidity')}%",
+            "gió": {
+                "tốc_độ": f"{current.get('wind_kph')} km/h",
+                "hướng": current.get("wind_dir"),
+            },
+            "chỉ_số_UV": current.get("uv"),
+            "tầm_nhìn": f"{current.get('vis_km')} km",
+            "cập_nhật_lúc": current.get("last_updated"),
+        }
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({
+            "thành_phố": city,
+            "lỗi": f"Không thể lấy dữ liệu thời tiết thực tế ({str(e)})"
+        }, ensure_ascii=False)
 
 
 def run(prompt: str) -> str:
@@ -118,6 +136,18 @@ def run(prompt: str) -> str:
 
 
 if __name__ == "__main__":
-    question = "Thời tiết Hà Nội và Đà Nẵng hôm nay thế nào?"
-    print(f"User: {question}\n")
-    print("Trả lời:", run(question))
+    print("🌤️ Trợ lý thời tiết Gemini Function Calling (gõ 'exit' hoặc 'quit' để thoát)\n" + "=" * 60)
+    while True:
+        try:
+            question = input("\nNhập câu hỏi thời tiết của bạn: ").strip()
+            if not question:
+                continue
+            if question.lower() in ("exit", "quit", "q"):
+                print("Tạm biệt!")
+                break
+            print("\n[Đang xử lý...]")
+            answer = run(question)
+            print(f"\nTrả lời:\n{answer}\n" + "-" * 60)
+        except (KeyboardInterrupt, EOFError):
+            print("\nTạm biệt!")
+            break

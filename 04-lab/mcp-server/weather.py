@@ -2,6 +2,11 @@ from typing import Any
 import asyncio
 import httpx
 import os
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from mcp.server.fastmcp import FastMCP
 
 # Initialize FastMCP server
@@ -13,7 +18,7 @@ WEATHERAPI_BASE = "https://api.weatherapi.com/v1"
 USER_AGENT = "weather-app/1.0"
 
 # Get API key from environment variable
-API_KEY = os.getenv("WEATHERAPI_KEY")
+API_KEY = os.getenv("WEATHERAPI_KEY", "68d4b33471cc461387875347262808")
 
 async def make_weather_request(endpoint: str, params: dict[str, str]) -> dict[str, Any] | None:
     """Make a request to the WeatherAPI with proper error handling."""
@@ -141,12 +146,9 @@ print("🔧 Available tools: get_current_weather, get_forecast, health_check")
 if __name__ == "__main__":
     import sys
     
-    is_cloud_run = bool(os.getenv("PORT"))
-    is_standalone = len(sys.argv) == 1 and sys.stdin.isatty()
-    
-    if is_cloud_run or is_standalone:
-        print(f"🚀 Starting MCP server on http://0.0.0.0:{port}/mcp")
-        mcp.run(transport="streamable-http")
-    else:
+    if "--stdio" in sys.argv:
         print("Starting FastMCP server in stdio mode for local client", file=sys.stderr)
         mcp.run()
+    else:
+        print(f"🚀 Starting MCP server on http://0.0.0.0:{port}/mcp")
+        mcp.run(transport="streamable-http")

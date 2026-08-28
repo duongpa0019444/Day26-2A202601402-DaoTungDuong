@@ -7,6 +7,9 @@ import os
 import sys
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 def check_environment():
     """Check if .env file exists and is configured"""
     print("🔍 Checking environment configuration...")
@@ -36,7 +39,7 @@ def check_dependencies():
     
     required_packages = [
         ("google.adk", "Google ADK"),
-        ("google.generativeai", "Google Generative AI"),
+        ("google.genai", "Google GenAI SDK"),
         ("mcp", "MCP"),
         ("fastmcp", "FastMCP"),
         ("dotenv", "python-dotenv"),
@@ -54,7 +57,7 @@ def check_dependencies():
     
     if not all_installed:
         print("\n   Install with: uv sync")
-        print("   Or: pip install google-adk google-generativeai mcp fastmcp python-dotenv httpx")
+        print("   Or: pip install google-adk google-genai mcp fastmcp python-dotenv httpx")
     
     return all_installed
 
@@ -82,7 +85,10 @@ def check_mcp_server():
     """Check if MCP server is accessible"""
     print("\n🔍 Checking MCP server connectivity...")
     
-    server_url = "https://weather-mcp-server-oze7nwnjba-as.a.run.app"
+    server_urls = [
+        "http://localhost:8085/mcp",
+        "https://weather-mcp-server-oze7nwnjba-as.a.run.app"
+    ]
     
     try:
         import httpx
@@ -90,16 +96,22 @@ def check_mcp_server():
         
         async def test_connection():
             async with httpx.AsyncClient() as client:
-                response = await client.get(server_url, timeout=10.0)
-                return response.status_code
+                for url in server_urls:
+                    try:
+                        response = await client.get(url, timeout=5.0)
+                        if response.status_code in [200, 404, 405]:
+                            return url, True
+                    except Exception:
+                        pass
+                return server_urls[0], False
         
-        status_code = asyncio.run(test_connection())
+        url, ok = asyncio.run(test_connection())
         
-        if status_code in [200, 404]:  # 404 is expected for GET on MCP endpoint
-            print(f"✅ MCP server reachable at {server_url}")
+        if ok:
+            print(f"✅ MCP server reachable at {url}")
             return True
         else:
-            print(f"⚠️  MCP server returned status {status_code}")
+            print(f"⚠️  MCP server not reachable at {url}")
             return False
             
     except Exception as e:
